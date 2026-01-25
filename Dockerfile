@@ -1,65 +1,80 @@
 # Gunakan Ubuntu 20.04 
 FROM ubuntu:20.04
 
-# Set non-interactive
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies dasar
+# Install dependencies
 RUN apt-get update && apt-get install -y \
-    wget \
-    curl \
-    gnupg \
-    ca-certificates \
+    wget curl gnupg ca-certificates tree \
     && rm -rf /var/lib/apt/lists/*
 
 # Install .NET Core 3.1
 RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && apt-get update \
-    && apt-get install -y dotnet-sdk-3.1 dotnet-runtime-3.1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 18.x
-RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-    && apt-get install -y nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Lua 5.1
-RUN apt-get update && apt-get install -y \
-    lua5.1 \
-    lua5.1-dev \
-    liblua5.1-0-dev \
+    && apt-get install -y dotnet-sdk-3.1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# Copy semua file dari repository
+# Copy semua file
 COPY . .
 
-# Restore IronBrew2 library
-RUN cd /app/IronBrew2 && dotnet restore
+# ============ DEBUG: Lihat struktur folder ============
+RUN echo "========================================" && \
+    echo "=== STRUKTUR FOLDER /app ===" && \
+    echo "========================================" && \
+    tree -L 3 /app || find /app -maxdepth 3 -type f | head -100
 
-# Buat CLI wrapper project
-RUN dotnet new console -n CLI -o /app/CLI --framework netcoreapp3.1
+# ============ DEBUG: Lihat semua file .cs di IronBrew2 ============
+RUN echo "========================================" && \
+    echo "=== FILE .CS DI IRONBREW2 ===" && \
+    echo "========================================" && \
+    find /app -name "*.cs" -type f | head -50
 
-# Tambah reference ke IronBrew2
-RUN cd /app/CLI && dotnet add reference ../IronBrew2/IronBrew2.csproj
+# ============ DEBUG: Lihat isi file utama (cari class/method) ============
+RUN echo "========================================" && \
+    echo "=== ISI FILE OBFUSCATOR (jika ada) ===" && \
+    echo "========================================" && \
+    (cat /app/IronBrew2/Obfuscator.cs 2>/dev/null || echo "File Obfuscator.cs tidak ditemukan")
 
-# Buat Program.cs untuk CLI wrapper
-RUN echo 'using System; \n\
-using System.IO; \n\
-using System.Text; \n\
-\n\
-namespace CLI \n\
-{ \n\
-    class Program \n\
-    { \n\
-        static void Main(string[] args) \n\
-        { \n\
-            if (args.Length < 2) \n\
-            { \n\
-                Console.WriteLine("Usage: CLI <input.lua> <output.lua>"); \n\
-                Environment.Exit(1); \n\
+RUN echo "========================================" && \
+    echo "=== ISI FILE PROGRAM.CS (jika ada) ===" && \
+    echo "========================================" && \
+    (cat /app/IronBrew2/Program.cs 2>/dev/null || echo "File Program.cs tidak ditemukan")
+
+# ============ DEBUG: Cari semua public class ============
+RUN echo "========================================" && \
+    echo "=== SEMUA PUBLIC CLASS DI IRONBREW2 ===" && \
+    echo "========================================" && \
+    grep -rn "public class\|public static class" /app/IronBrew2/*.cs 2>/dev/null | head -30 || echo "Tidak ditemukan"
+
+# ============ DEBUG: Cari method yang mungkin untuk obfuscate ============
+RUN echo "========================================" && \
+    echo "=== SEMUA PUBLIC METHOD ===" && \
+    echo "========================================" && \
+    grep -rn "public static\|public void\|public string" /app/IronBrew2/*.cs 2>/dev/null | head -50 || echo "Tidak ditemukan"
+
+# ============ DEBUG: Build IronBrew2 dan lihat DLL ============
+RUN echo "========================================" && \
+    echo "=== BUILD IRONBREW2 ===" && \
+    echo "========================================" && \
+    cd /app/IronBrew2 && dotnet restore && dotnet build -c Release && \
+    echo "Build sukses!" && \
+    ls -la /app/IronBrew2/bin/Release/netcoreapp3.1/
+
+# ============ DEBUG: Lihat namespace dan types di DLL ============
+RUN echo "========================================" && \
+    echo "=== NAMESPACE/TYPES DI DLL ===" && \
+    echo "========================================" && \
+    dotnet /app/IronBrew2/bin/Release/netcoreapp3.1/IronBrew2.dll --help 2>&1 || echo "(DLL tidak bisa dijalankan langsung, ini normal untuk library)"
+
+# Stop disini untuk debug
+RUN echo "========================================" && \
+    echo "=== DEBUG SELESAI ===" && \
+    echo "=== Lihat log di atas untuk struktur repo ===" && \
+    echo "========================================" && \
+    exit 1                Environment.Exit(1); \n\
             } \n\
             \n\
             try \n\
