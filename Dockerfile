@@ -1,29 +1,30 @@
-# Gunakan Ubuntu 20.04 yang masih mendukung semua package yang dibutuhkan
+# Gunakan Ubuntu 20.04 
 FROM ubuntu:20.04
 
 # Set non-interactive
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies dasar
+# Install dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
     gnupg \
     ca-certificates \
-    software-properties-common \
     && rm -rf /var/lib/apt/lists/*
 
 # Install .NET Core 3.1
 RUN wget https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb -O packages-microsoft-prod.deb \
     && dpkg -i packages-microsoft-prod.deb \
     && apt-get update \
-    && apt-get install -y dotnet-sdk-3.1 dotnet-runtime-3.1
+    && apt-get install -y dotnet-sdk-3.1 dotnet-runtime-3.1 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 16.x
-RUN curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
-    && apt-get install -y nodejs
+# Install Node.js 18.x
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+    && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
 
-# Install Lua 5.1 (tersedia di Ubuntu 20.04)
+# Install Lua 5.1
 RUN apt-get update && apt-get install -y \
     lua5.1 \
     lua5.1-dev \
@@ -32,34 +33,23 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy semua file proyek
+# Copy semua file
 COPY . .
 
-# Install npm packages
-RUN npm install
+# Build .NET project (jika ada .csproj)
+RUN if ls *.csproj 1> /dev/null 2>&1; then \
+        dotnet restore && dotnet build -c Release; \
+    fi
 
-# Build .NET project
-RUN dotnet restore && dotnet build -c Release
+# Install npm packages (jika ada package.json)
+RUN if [ -f "package.json" ]; then \
+        npm install; \
+    fi
 
-# Buat .env file dari environment variables (jika tidak ada)
-RUN echo '#!/bin/bash' > /app/setup-env.sh && \
-    echo 'if [ ! -f ".env" ] && [ -n "$TOKEN" ]; then' >> /app/setup-env.sh && \
-    echo '    echo "TOKEN=$TOKEN" > .env' >> /app/setup-env.sh && \
-    echo '    if [ -n "$GuildID" ]; then' >> /app/setup-env.sh && \
-    echo '        echo "GuildID=$GuildID" >> .env' >> /app/setup-env.sh && \
-    echo '    fi' >> /app/setup-env.sh && \
-    echo '    echo ".env file created from environment variables"' >> /app/setup-env.sh && \
-    echo 'fi' >> /app/setup-env.sh && \
-    chmod +x /app/setup-env.sh
+EXPOSE 8080
 
-# Buat startup script
-RUN echo '#!/bin/bash' > /app/start.sh && \
-    echo 'echo "=== Ironbrew 3 Discord Bot ==="' >> /app/start.sh && \
-    echo 'echo "Starting at: $(date)"' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo '# Setup .env file from environment variables' >> /app/start.sh && \
-    echo './setup-env.sh' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
+# Start bot
+CMD ["node", "index.js"]    echo '' >> /app/start.sh && \
     echo '# Check if .env exists' >> /app/start.sh && \
     echo 'if [ ! -f ".env" ]; then' >> /app/start.sh && \
     echo '    echo "ERROR: .env file not found and TOKEN environment variable not set!"' >> /app/start.sh && \
