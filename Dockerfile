@@ -4,7 +4,7 @@ FROM ubuntu:20.04
 # Set non-interactive
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Install dependencies
+# Install dependencies dasar
 RUN apt-get update && apt-get install -y \
     wget \
     curl \
@@ -33,52 +33,133 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy semua file
+# Copy semua file dari repository
 COPY . .
 
-# Build .NET project (jika ada .csproj)
+# Build .NET project jika ada
 RUN if ls *.csproj 1> /dev/null 2>&1; then \
         dotnet restore && dotnet build -c Release; \
     fi
 
-# Install npm packages (jika ada package.json)
-RUN if [ -f "package.json" ]; then \
-        npm install; \
-    fi
+# Buat package.json untuk Discord bot
+RUN echo '{\
+  "name": "ironbrew3-discord-bot",\
+  "version": "1.0.0",\
+  "main": "index.js",\
+  "dependencies": {\
+    "discord.js": "^14.14.1",\
+    "dotenv": "^16.3.1"\
+  }\
+}' > /app/package.json
+
+# Install npm packages
+RUN npm install
+
+# Buat Discord bot (index.js)
+RUN echo 'const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");\n\
+const { exec } = require("child_process");\n\
+const fs = require("fs");\n\
+const path = require("path");\n\
+const http = require("http");\n\
+\n\
+const client = new Client({\n\
+    intents: [\n\
+        GatewayIntentBits.Guilds,\n\
+        GatewayIntentBits.GuildMessages,\n\
+        GatewayIntentBits.MessageContent\n\
+    ]\n\
+});\n\
+\n\
+client.once("ready", async () => {\n\
+    console.log(`Bot is online as ${client.user.tag}`);\n\
+    \n\
+    const commands = [\n\
+        new SlashCommandBuilder()\n\
+            .setName("obfuscate")\n\
+            .setDescription("Obfuscate Lua script")\n\
+            .addAttachmentOption(opt => opt.setName("file").setDescription("Lua file").setRequired(true)),\n\
+        new SlashCommandBuilder()\n\
+            .setName("ping")\n\
+            .setDescription("Check bot latency")\n\
+    ];\n\
+    \n\
+    const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);\n\
+    try {\n\
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });\n\
+        console.log("Slash commands registered!");\n\
+    } catch (error) {\n\
+        console.error("Error registering commands:", error);\n\
+    }\n\
+});\n\
+\n\
+client.on("interactionCreate", async interaction => {\n\
+    if (!interaction.isChatInputCommand()) return;\n\
+    \n\
+    if (interaction.commandName === "ping") {\n\
+        await interaction.reply(`Pong! ${client.ws.ping}ms`);\n\
+    }\n\
+    \n\
+    if (interaction.commandName === "obfuscate") {\n\
+        await interaction.deferReply();\n\
+        const attachment = interaction.options.getAttachment("file");\n\
+        \n\
+        if (!attachment.name.endsWith(".lua")) {\n\
+            return interaction.editReply("Please upload a .lua file!");\n\
+        }\n\
+        \n\
+        try {\n\
+            const response = await fetch(attachment.url);\n\
+            const luaCode = await response.text();\n\
+            const inputPath = `/tmp/input_${Date.now()}.lua`;\n\
+            const outputPath = `/tmp/output_${Date.now()}.lua`;\n\
+            \n\
+            fs.writeFileSync(inputPath, luaCode);\n\
+            \n\
+            exec(`dotnet run --project /app/*.csproj -- "${inputPath}" -o "${outputPath}"`,\n\
+                { cwd: "/app", timeout: 60000 },\n\
+                async (error, stdout, stderr) => {\n\
+                    if (fs.existsSync(outputPath)) {\n\
+                        const file = new AttachmentBuilder(outputPath, { name: "obfuscated.lua" });\n\
+                        await interaction.editReply({ content: "Obfuscation complete!", files: [file] });\n\
+                        fs.unlinkSync(inputPath);\n\
+                        fs.unlinkSync(outputPath);\n\
+                    } else {\n\
+                        await interaction.editReply(`Error: ${stderr || stdout || "Unknown error"}`);\n\
+                    }\n\
+                }\n\
+            );\n\
+        } catch (error) {\n\
+            await interaction.editReply(`Error: ${error.message}`);\n\
+        }\n\
+    }\n\
+});\n\
+\n\
+const server = http.createServer((req, res) => {\n\
+    res.writeHead(200, { "Content-Type": "text/plain" });\n\
+    res.end("OK");\n\
+});\n\
+server.listen(process.env.PORT || 8080, () => {\n\
+    console.log(`Health server on port ${process.env.PORT || 8080}`);\n\
+});\n\
+\n\
+client.login(process.env.TOKEN);' > /app/index.js
+
+# Buat startup script
+RUN echo '#!/bin/bash\n\
+echo "=== Ironbrew 3 Discord Bot ==="\n\
+echo "Starting at: $(date)"\n\
+\n\
+if [ -z "$TOKEN" ]; then\n\
+    echo "ERROR: TOKEN not set!"\n\
+    echo "Set TOKEN in Render Environment Variables"\n\
+    exit 1\n\
+fi\n\
+\n\
+echo "Starting bot..."\n\
+cd /app\n\
+node index.js' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 8080
 
-# Start bot
-CMD ["node", "index.js"]    echo '' >> /app/start.sh && \
-    echo '# Check if .env exists' >> /app/start.sh && \
-    echo 'if [ ! -f ".env" ]; then' >> /app/start.sh && \
-    echo '    echo "ERROR: .env file not found and TOKEN environment variable not set!"' >> /app/start.sh && \
-    echo '    echo "Please either:"' >> /app/start.sh && \
-    echo '    echo "  1. Set TOKEN and GuildID environment variables in Render dashboard"' >> /app/start.sh && \
-    echo '    echo "  2. Or include a .env file in your repository"' >> /app/start.sh && \
-    echo '    exit 1' >> /app/start.sh && \
-    echo 'fi' >> /app/start.sh && \
-    echo '' >> /app/start.sh && \
-    echo '# Start the bot' >> /app/start.sh && \
-    echo 'echo "Starting Discord bot..."' >> /app/start.sh && \
-    echo 'dotnet run --project Ironbrew3.csproj' >> /app/start.sh && \
-    chmod +x /app/start.sh
-
-# Port untuk Render
-EXPOSE 8080
-
-# Buat web server sederhana untuk health check
-RUN apt-get update && apt-get install -y python3 python3-pip \
-    && pip3 install flask \
-    && echo 'from flask import Flask\napp = Flask(__name__)\n@app.route("/")\ndef home():\n    return "Ironbrew 3 Discord Bot is running"\n@app.route("/health")\ndef health():\n    return "OK", 200\nif __name__ == "__main__":\n    app.run(host="0.0.0.0", port=8080)' > /app/health-server.py
-
-# Gunakan script untuk menjalankan web server dan bot
-RUN echo '#!/bin/bash' > /app/run-all.sh && \
-    echo 'echo "Starting health check server..."' >> /app/run-all.sh && \
-    echo 'python3 /app/health-server.py &' >> /app/run-all.sh && \
-    echo 'sleep 2' >> /app/run-all.sh && \
-    echo 'echo "Starting Discord bot..."' >> /app/run-all.sh && \
-    echo '/app/start.sh' >> /app/run-all.sh && \
-    chmod +x /app/run-all.sh
-
-CMD ["/app/run-all.sh"]
+# Start command
+CMD ["/app/start.sh"]
