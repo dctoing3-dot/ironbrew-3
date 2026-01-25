@@ -5,13 +5,13 @@ services:
     repo: https://github.com/dctoing3-dot/ironbrew-3
     branch: main
     envVars:
-      - key: DISCORD_TOKEN
-        sync: false
-      - key: PREFIX
-        value: "!"
+      - key: TOKEN
+        sync: false  # Set manual di dashboard
+      - key: GuildID
+        sync: false  # Set manual di dashboard
       - key: DOTNET_ENVIRONMENT
         value: Production
     buildCommand: ""
-    startCommand: "./start.sh"
+    startCommand: "/app/run-all.sh"
     healthCheckPath: /health
     autoDeploy: true
