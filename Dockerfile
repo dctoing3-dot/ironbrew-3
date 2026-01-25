@@ -19,7 +19,7 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
     && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Lua 5.1
+# Install Lua 5.1 (termasuk luac untuk compile)
 RUN apt-get update && apt-get install -y \
     lua5.1 lua5.1-dev liblua5.1-0-dev \
     && rm -rf /var/lib/apt/lists/*
@@ -34,10 +34,11 @@ RUN cd /app/IronBrew2 && dotnet restore && dotnet build -c Release
 RUN dotnet new console -n CLI -o /app/CLI --framework netcoreapp3.1
 RUN cd /app/CLI && dotnet add reference ../IronBrew2/IronBrew2.csproj
 
-# Buat Program.cs untuk CLI dengan NAMESPACE YANG BENAR
+# Buat Program.cs untuk CLI - COMPILE LUA DULU
 RUN cat > /app/CLI/Program.cs << 'EOF'
 using System;
 using System.IO;
+using System.Diagnostics;
 using IronBrew2;
 using IronBrew2.Obfuscator;
 
@@ -57,15 +58,47 @@ namespace CLI
             {
                 string inputPath = args[0];
                 string outputPath = args[1];
+                string bytecodeFile = inputPath + ".luac";
 
                 Console.WriteLine("Reading: " + inputPath);
-                string luaCode = File.ReadAllText(inputPath);
+                
+                // Step 1: Compile Lua source to bytecode using luac
+                Console.WriteLine("Compiling Lua to bytecode...");
+                var luacProcess = new Process
+                {
+                    StartInfo = new ProcessStartInfo
+                    {
+                        FileName = "luac5.1",
+                        Arguments = $"-o \"{bytecodeFile}\" \"{inputPath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+                
+                luacProcess.Start();
+                string luacError = luacProcess.StandardError.ReadToEnd();
+                luacProcess.WaitForExit();
+                
+                if (luacProcess.ExitCode != 0)
+                {
+                    Console.WriteLine("Lua compilation failed: " + luacError);
+                    Environment.Exit(1);
+                }
+                
+                Console.WriteLine("Bytecode compiled successfully!");
 
+                // Step 2: Read bytecode and obfuscate
                 Console.WriteLine("Obfuscating with IronBrew2...");
+                string bytecodeContent = File.ReadAllText(bytecodeFile);
                 
                 var settings = new ObfuscationSettings();
+                bool success = IB2.Obfuscate(bytecodeFile, bytecodeContent, settings, out string result);
 
-                bool success = IB2.Obfuscate(outputPath, luaCode, settings, out string result);
+                // Cleanup temp bytecode file
+                if (File.Exists(bytecodeFile))
+                    File.Delete(bytecodeFile);
 
                 if (!success)
                 {
@@ -73,7 +106,8 @@ namespace CLI
                     Environment.Exit(1);
                 }
 
-                Console.WriteLine("Done! Output written to: " + outputPath);
+                // IB2.Obfuscate writes to outputPath directly
+                Console.WriteLine("Done! Output: " + outputPath);
             }
             catch (Exception ex)
             {
