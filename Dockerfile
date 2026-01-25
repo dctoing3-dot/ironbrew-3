@@ -36,8 +36,60 @@ WORKDIR /app
 # Copy semua file dari repository
 COPY . .
 
-# Build IronBrew2 project (path yang benar!)
-RUN cd /app/IronBrew2 && dotnet restore && dotnet build -c Release
+# Restore IronBrew2 library
+RUN cd /app/IronBrew2 && dotnet restore
+
+# Buat CLI wrapper project
+RUN dotnet new console -n CLI -o /app/CLI --framework netcoreapp3.1
+
+# Tambah reference ke IronBrew2
+RUN cd /app/CLI && dotnet add reference ../IronBrew2/IronBrew2.csproj
+
+# Buat Program.cs untuk CLI wrapper
+RUN echo 'using System; \n\
+using System.IO; \n\
+using System.Text; \n\
+\n\
+namespace CLI \n\
+{ \n\
+    class Program \n\
+    { \n\
+        static void Main(string[] args) \n\
+        { \n\
+            if (args.Length < 2) \n\
+            { \n\
+                Console.WriteLine("Usage: CLI <input.lua> <output.lua>"); \n\
+                Environment.Exit(1); \n\
+            } \n\
+            \n\
+            try \n\
+            { \n\
+                string inputPath = args[0]; \n\
+                string outputPath = args[1]; \n\
+                \n\
+                Console.WriteLine("Reading: " + inputPath); \n\
+                string luaCode = File.ReadAllText(inputPath); \n\
+                \n\
+                Console.WriteLine("Obfuscating..."); \n\
+                string obfuscated = IronBrew2.Obfuscator.Obfuscate(luaCode); \n\
+                \n\
+                Console.WriteLine("Writing: " + outputPath); \n\
+                File.WriteAllText(outputPath, obfuscated); \n\
+                \n\
+                Console.WriteLine("Done!"); \n\
+            } \n\
+            catch (Exception ex) \n\
+            { \n\
+                Console.WriteLine("Error: " + ex.Message); \n\
+                Console.WriteLine(ex.StackTrace); \n\
+                Environment.Exit(1); \n\
+            } \n\
+        } \n\
+    } \n\
+}' > /app/CLI/Program.cs
+
+# Build CLI wrapper
+RUN cd /app/CLI && dotnet build -c Release
 
 # Buat package.json untuk Discord bot
 RUN echo '{\
@@ -53,11 +105,10 @@ RUN echo '{\
 # Install npm packages
 RUN npm install
 
-# Buat Discord bot (index.js) dengan path yang BENAR
+# Buat Discord bot (index.js)
 RUN echo 'const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");\n\
 const { exec } = require("child_process");\n\
 const fs = require("fs");\n\
-const path = require("path");\n\
 const http = require("http");\n\
 \n\
 const client = new Client({\n\
@@ -113,8 +164,8 @@ client.on("interactionCreate", async interaction => {\n\
             \n\
             fs.writeFileSync(inputPath, luaCode);\n\
             \n\
-            exec(`cd /app/IronBrew2 && dotnet run --no-build -c Release -- "${inputPath}" "${outputPath}"`,\n\
-                { cwd: "/app/IronBrew2", timeout: 120000 },\n\
+            exec(`dotnet /app/CLI/bin/Release/netcoreapp3.1/CLI.dll "${inputPath}" "${outputPath}"`,\n\
+                { timeout: 120000 },\n\
                 async (error, stdout, stderr) => {\n\
                     console.log("STDOUT:", stdout);\n\
                     console.log("STDERR:", stderr);\n\
@@ -125,7 +176,7 @@ client.on("interactionCreate", async interaction => {\n\
                         fs.unlinkSync(inputPath);\n\
                         fs.unlinkSync(outputPath);\n\
                     } else {\n\
-                        const errMsg = (stderr || stdout || "Unknown error").slice(-1500);\n\
+                        const errMsg = (stderr || stdout || error?.message || "Unknown error").slice(-1500);\n\
                         await interaction.editReply("Error:\\n```\\n" + errMsg + "\\n```");\n\
                         if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);\n\
                     }\n\
@@ -154,7 +205,6 @@ echo "Starting at: $(date)"\n\
 \n\
 if [ -z "$TOKEN" ]; then\n\
     echo "ERROR: TOKEN not set!"\n\
-    echo "Set TOKEN in Render Environment Variables"\n\
     exit 1\n\
 fi\n\
 \n\
@@ -164,5 +214,4 @@ node index.js' > /app/start.sh && chmod +x /app/start.sh
 
 EXPOSE 8080
 
-# Start command
 CMD ["/app/start.sh"]
