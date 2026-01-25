@@ -36,10 +36,8 @@ WORKDIR /app
 # Copy semua file dari repository
 COPY . .
 
-# Build .NET project jika ada
-RUN if ls *.csproj 1> /dev/null 2>&1; then \
-        dotnet restore && dotnet build -c Release; \
-    fi
+# Build IronBrew2 project (path yang benar!)
+RUN cd /app/IronBrew2 && dotnet restore && dotnet build -c Release
 
 # Buat package.json untuk Discord bot
 RUN echo '{\
@@ -55,7 +53,7 @@ RUN echo '{\
 # Install npm packages
 RUN npm install
 
-# Buat Discord bot (index.js)
+# Buat Discord bot (index.js) dengan path yang BENAR
 RUN echo 'const { Client, GatewayIntentBits, REST, Routes, SlashCommandBuilder, AttachmentBuilder } = require("discord.js");\n\
 const { exec } = require("child_process");\n\
 const fs = require("fs");\n\
@@ -115,16 +113,21 @@ client.on("interactionCreate", async interaction => {\n\
             \n\
             fs.writeFileSync(inputPath, luaCode);\n\
             \n\
-            exec(`dotnet run --project /app/*.csproj -- "${inputPath}" -o "${outputPath}"`,\n\
-                { cwd: "/app", timeout: 60000 },\n\
+            exec(`cd /app/IronBrew2 && dotnet run --no-build -c Release -- "${inputPath}" "${outputPath}"`,\n\
+                { cwd: "/app/IronBrew2", timeout: 120000 },\n\
                 async (error, stdout, stderr) => {\n\
+                    console.log("STDOUT:", stdout);\n\
+                    console.log("STDERR:", stderr);\n\
+                    \n\
                     if (fs.existsSync(outputPath)) {\n\
                         const file = new AttachmentBuilder(outputPath, { name: "obfuscated.lua" });\n\
                         await interaction.editReply({ content: "Obfuscation complete!", files: [file] });\n\
                         fs.unlinkSync(inputPath);\n\
                         fs.unlinkSync(outputPath);\n\
                     } else {\n\
-                        await interaction.editReply(`Error: ${stderr || stdout || "Unknown error"}`);\n\
+                        const errMsg = (stderr || stdout || "Unknown error").slice(-1500);\n\
+                        await interaction.editReply("Error:\\n```\\n" + errMsg + "\\n```");\n\
+                        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath);\n\
                     }\n\
                 }\n\
             );\n\
