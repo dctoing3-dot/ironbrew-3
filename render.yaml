@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ironbrew3-discord-bot
+    runtime: docker
+    repo: https://github.com/dctoing3-dot/ironbrew-3
+    branch: main
+    envVars:
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: PREFIX
+        value: "!"
+      - key: DOTNET_ENVIRONMENT
+        value: Production
+    buildCommand: ""
+    startCommand: "./start.sh"
+    healthCheckPath: /health
+    autoDeploy: true
