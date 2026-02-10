@@ -171,13 +171,18 @@ local function Wrap(Chunk, Upvalues, Env)
 			Inst		= Instr[InstrPoint];
 			Enum		= Inst[OP_ENUM];";
 
+		// ============================================
+		// MODIFIED: Tambahkan end untuk tutup wrapper
+		// ============================================
 		public static string VMP3 = @"
 			InstrPoint	= InstrPoint + 1;
 		end;
     end;
 end;	
-return Wrap(Deserialize(), {}, GetFEnv())();
+return Wrap(Deserialize(), {}, GetFEnv())(...);
+end
 ";
+
 		public static string VMP2_LI = @"
 local PCall = pcall
 local function Wrap(Chunk, Upvalues, Env)
@@ -221,6 +226,9 @@ local function Wrap(Chunk, Upvalues, Env)
 				Inst		= Instr[InstrPoint];
 				Enum		= Inst[OP_ENUM];";
 		
+		// ============================================
+		// MODIFIED: Tambahkan end untuk tutup wrapper
+		// ============================================
 		public static string VMP3_LI = @"
 				InstrPoint	= InstrPoint + 1;
 			end;
@@ -235,7 +243,8 @@ local function Wrap(Chunk, Upvalues, Env)
 		end;
 	end;
 end;	
-return Wrap(Deserialize(), {}, GetFEnv())();
+return Wrap(Deserialize(), {}, GetFEnv())(...);
+end
 ";
 	}
 }
