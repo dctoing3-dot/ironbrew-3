@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Text;
 using IronBrew2;
 using IronBrew2.Obfuscator;
 
@@ -10,16 +9,15 @@ namespace IronBrew2_CLI
     {
         static void Main(string[] args)
         {
-            if (args.Length < 1)
+            if (args.Length < 2)
             {
-                Console.WriteLine("Usage: IronBrew2 <input.lua> [output.lua]");
-                Console.WriteLine("Example: IronBrew2 script.lua");
+                Console.WriteLine("Usage: IronBrew2 <input.lua> <output.lua>");
                 Console.WriteLine("Example: IronBrew2 script.lua obfuscated.lua");
                 return;
             }
 
             string inputPath = args[0];
-            string outputPath = args.Length >= 2 ? args[1] : "out.lua";
+            string outputPath = args[1];
 
             // Validasi input
             if (!File.Exists(inputPath))
@@ -33,6 +31,10 @@ namespace IronBrew2_CLI
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
             Directory.CreateDirectory(tempDir);
+
+            Console.WriteLine($"[*] Input: {inputPath}");
+            Console.WriteLine($"[*] Output: {outputPath}");
+            Console.WriteLine("[*] Obfuscating...");
 
             // Obfuscate
             if (!IB2.Obfuscate(tempDir, inputPath, new ObfuscationSettings(), out string err))
@@ -53,7 +55,7 @@ namespace IronBrew2_CLI
             Directory.Delete(tempDir, true);
 
             Console.WriteLine("Done!");
-            Console.WriteLine($"Output: {outputPath}");
+            Console.WriteLine($"Output saved to: {outputPath}");
         }
     }
 }
