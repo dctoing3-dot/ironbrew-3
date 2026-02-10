@@ -12,11 +12,15 @@ const client = new Client({
     ]
 });
 
+// Config
+const MAX_FILE_SIZE = 1024 * 1024; // 1MB
+const IRONBREW_PATH = '/app/IronBrew2';
+
 // Slash commands
 const commands = [
     new SlashCommandBuilder()
         .setName('obfuscate')
-        .setDescription('Obfuscate Lua script using Ironbrew 3')
+        .setDescription('Obfuscate Lua script using IronBrew2')
         .addAttachmentOption(option =>
             option.setName('file')
                 .setDescription('Lua file to obfuscate')
@@ -41,6 +45,19 @@ client.once('ready', async () => {
     }
 });
 
+// Helper function untuk cleanup
+function cleanup(...files) {
+    files.forEach(file => {
+        try {
+            if (fs.existsSync(file)) {
+                fs.unlinkSync(file);
+            }
+        } catch (e) {
+            console.error(`Failed to cleanup ${file}:`, e);
+        }
+    });
+}
+
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -49,47 +66,86 @@ client.on('interactionCreate', async interaction => {
 
         const attachment = interaction.options.getAttachment('file');
         
+        // Validasi file extension
         if (!attachment.name.endsWith('.lua')) {
-            return interaction.editReply('❌ Please upload a .lua file!');
+            return interaction.editReply('❌ Please upload a `.lua` file!');
         }
+
+        // Validasi file size
+        if (attachment.size > MAX_FILE_SIZE) {
+            return interaction.editReply('❌ File too large! Maximum size is 1MB.');
+        }
+
+        const timestamp = Date.now();
+        const inputPath = `/tmp/input_${timestamp}.lua`;
+        const outputPath = `/tmp/output_${timestamp}.lua`;
 
         try {
             // Download file
             const response = await fetch(attachment.url);
+            
+            if (!response.ok) {
+                return interaction.editReply('❌ Failed to download file.');
+            }
+            
             const luaCode = await response.text();
             
-            // Save to temp file
-            const inputPath = path.join('/tmp', `input_${Date.now()}.lua`);
-            const outputPath = path.join('/tmp', `output_${Date.now()}.lua`);
+            // Validasi basic
+            if (!luaCode.trim()) {
+                return interaction.editReply('❌ File is empty!');
+            }
             
+            // Save to temp file
             fs.writeFileSync(inputPath, luaCode);
 
-            // Run Ironbrew 3
-            exec(`dotnet run --project /app -- "${inputPath}" "${outputPath}"`, 
-                { cwd: '/app', timeout: 60000 },
-                async (error, stdout, stderr) => {
+            // Run IronBrew2
+            const command = `dotnet run --project "${IRONBREW_PATH}" -- "${inputPath}" "${outputPath}"`;
+            
+            exec(command, { 
+                cwd: IRONBREW_PATH,
+                timeout: 120000 
+            }, async (error, stdout, stderr) => {
+                console.log("=== IronBrew2 Output ===");
+                console.log("STDOUT:", stdout);
+                if (stderr) console.log("STDERR:", stderr);
+                
+                try {
                     if (error) {
                         console.error('Obfuscation error:', error);
-                        return interaction.editReply(`❌ Error: ${stderr || error.message}`);
+                        cleanup(inputPath, outputPath);
+                        return interaction.editReply(`❌ Obfuscation failed!\n\`\`\`\n${stderr || error.message}\n\`\`\``);
                     }
 
                     if (fs.existsSync(outputPath)) {
-                        const file = new AttachmentBuilder(outputPath, { name: 'obfuscated.lua' });
+                        const outputStats = fs.statSync(outputPath);
+                        
+                        if (outputStats.size === 0) {
+                            cleanup(inputPath, outputPath);
+                            return interaction.editReply('❌ Obfuscation failed. Output file is empty.');
+                        }
+
+                        const file = new AttachmentBuilder(outputPath, { 
+                            name: `obfuscated_${attachment.name}` 
+                        });
+                        
                         await interaction.editReply({
-                            content: '✅ Obfuscation complete!',
+                            content: `✅ **Obfuscation complete!**\n📁 Original: \`${attachment.name}\` (${attachment.size} bytes)\n📦 Output: \`obfuscated_${attachment.name}\` (${outputStats.size} bytes)`,
                             files: [file]
                         });
                         
-                        // Cleanup
-                        fs.unlinkSync(inputPath);
-                        fs.unlinkSync(outputPath);
+                        cleanup(inputPath, outputPath);
                     } else {
-                        await interaction.editReply('❌ Obfuscation failed. No output file generated.');
+                        cleanup(inputPath, outputPath);
+                        await interaction.editReply(`❌ Obfuscation failed.\n\`\`\`\n${stdout}\n\`\`\``);
                     }
+                } catch (replyError) {
+                    console.error('Reply error:', replyError);
+                    cleanup(inputPath, outputPath);
                 }
-            );
+            });
         } catch (error) {
             console.error('Error:', error);
+            cleanup(inputPath, outputPath);
             await interaction.editReply(`❌ Error: ${error.message}`);
         }
     }
