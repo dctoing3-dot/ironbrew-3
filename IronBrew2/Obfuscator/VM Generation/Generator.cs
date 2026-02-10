@@ -409,7 +409,12 @@ namespace IronBrew2.Obfuscator.VM_Generation
 			string vm = "";
 
 			byte[] bs = new Serializer(_context, settings).SerializeLChunk(_context.HeadChunk);
-			
+
+			// ============================================
+			// MODIFIED: Tambahkan wrapper return function
+			// ============================================
+			vm += "return function(...)\n";
+
 			vm += @"
 local Byte         = string.byte;
 local Char         = string.char;
